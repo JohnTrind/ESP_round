@@ -1,107 +1,92 @@
 # CrowPanel 1.28" HMI ESP32 Rotary Display — Arduino + LVGL
 
-Scaffold de menu rotativo para a board redonda da Elecrow (240×240 IPS, touch
-capacitivo, encoder com botão, anel de 5 LEDs WS2812).
+> 🇵🇹 [Versão em português](README.pt.md)
 
-Hardware confirmado por `esptool` nesta unidade: ESP32-S3R8, 16 MB flash
-(quad, 3,3 V), 8 MB PSRAM octal, USB-Serial/JTAG nativo.
+Rotary-menu scaffold for Elecrow's round board (240×240 IPS, capacitive touch, push-button encoder, ring of 5 WS2812 LEDs).
 
-## O detalhe que não está na wiki da Elecrow
+Hardware confirmed with `esptool` on this unit: ESP32-S3R8, 16 MB flash (quad, 3.3 V), 8 MB octal PSRAM, native USB-Serial/JTAG.
 
-**O conjunto display + touch tem um enable no `GPIO 1`, com pull-down externo —
-ou seja, arranca desligado.** Sem o pôr a HIGH o ecrã nunca acende e o
-controlador de touch não responde em I²C. Não aparece na documentação do
-produto; foi encontrado por medição (ver `src/diag.cpp`).
+## The detail that isn't in Elecrow's wiki
 
-Como foi isolado:
+**The display + touch assembly has an enable on `GPIO 1` with an external pull-down — so it boots switched off.** Unless you drive it HIGH, the screen never lights up and the touch controller doesn't answer on I²C. It's not in the product documentation; I found it by measurement (see `src/diag.cpp`).
 
-| Teste | Resultado |
+How it was isolated:
+
+| Test | Result |
 |---|---|
-| Anel WS2812 no GPIO 48 | acende → placa principal e alimentação OK |
-| Backlight GPIO 46 e os outros 28 GPIOs, HIGH e LOW | ecrã apagado |
-| Mapa passivo de pull-ups | pull-ups externos em 6/7, 38/39, 41/42/45; **pull-down em 1 e 2** |
-| Scan I²C em 6/7 | 0 dispositivos |
-| Scan I²C em 6/7 **com GPIO 1 a HIGH** | CST816 em `0x15`, 5/5 ACK |
+| WS2812 ring on GPIO 48 | lights up → main board and power OK |
+| Backlight GPIO 46 and the other 28 GPIOs, HIGH and LOW | screen dark |
+| Passive pull-up map | external pull-ups on 6/7, 38/39, 41/42/45; **pull-down on 1 and 2** |
+| I²C scan on 6/7 | 0 devices |
+| I²C scan on 6/7 **with GPIO 1 HIGH** | CST816 at `0x15`, 5/5 ACK |
 
-O `GPIO 2` é o outro pino com pull-down externo e continua sem função
-identificada — provável enable de outra coisa.
+`GPIO 2` is the other pin with an external pull-down and still has no identified function — probably the enable for something else.
 
-## Compilar e gravar
+## Build and flash
 
 ```powershell
-python -m platformio run -e crowpanel_128_rotary -t upload   # aplicação
-python -m platformio run -e diag -t upload                   # diagnóstico
+python -m platformio run -e crowpanel_128_rotary -t upload   # application
+python -m platformio run -e diag -t upload                   # diagnostics
 python -m platformio device monitor                          # serial
 ```
 
-Duas notas de ambiente:
+Two environment notes:
 
-- **A GFX Library está fixada em `~1.3.9`.** As 1.4+ exigem o core
-  Arduino-ESP32 3.x; a plataforma estável do PlatformIO traz o 2.0.17. O `~` é
-  necessário — com `^1.3.9` o semver resolve até 1.6.9 e volta a falhar.
-- **Abrir a porta série reinicia o chip.** Qualquer estado posto por comandos
-  do REPL desaparece na ligação seguinte; o que tiver de persistir vai no
-  `setup()`.
+- **GFX Library is pinned to `~1.3.9`.** 1.4+ requires Arduino-ESP32 core 3.x, while PlatformIO's stable platform ships 2.0.17. The `~` matters — with `^1.3.9` semver resolves up to 1.6.9 and breaks again.
+- **Opening the serial port resets the chip.** Any state set by REPL commands is gone on the next connection; anything that must persist goes in `setup()`.
 
-## Estrutura
+## Structure
 
-| Ficheiro | Papel |
+| File | Role |
 |---|---|
-| `include/pins.h` | pinout, incluindo o `PANEL_EN` |
-| `include/lv_conf.h` | LVGL mínimo (RGB565, tick via `millis`, fontes) |
-| `src/display.cpp` | GC9A01 + CST816D → LVGL, draw buffers duplos em RAM interna |
-| `src/encoder.cpp` | quadratura por ISR, detentes e clique com debounce |
-| `src/ui.cpp` | menu rotativo e os 4 demos |
-| `src/diag.cpp` | REPL de diagnóstico (env `diag`) |
+| `include/pins.h` | pinout, including `PANEL_EN` |
+| `include/lv_conf.h` | minimal LVGL (RGB565, `millis` tick, fonts) |
+| `src/display.cpp` | GC9A01 + CST816D → LVGL, double draw buffers in internal RAM |
+| `src/encoder.cpp` | ISR quadrature, detents and debounced click |
+| `src/ui.cpp` | rotary menu and the 4 demos |
+| `src/diag.cpp` | diagnostics REPL (env `diag`) |
 
-Decisões que valem contexto:
+Decisions worth the context:
 
-- **O encoder não é um `lv_indev`.** A app lê-o directamente, porque o modo
-  encoder do LVGL obriga a grupos e estado edit, que numa UI redonda dá mais
-  atrito do que valor. Cada ecrã decide o que o knob faz.
-- **O touch tem uma janela de retenção de 70 ms.** O CST816D reporta por
-  interrupção, não em contínuo; sem isso o LVGL só vê toques instantâneos e
-  nunca um arrasto.
-- **Draw buffers de 1/6 do ecrã, duplos, em RAM interna.** São 2×19 KB, mais
-  rápidos para SPI que a PSRAM; o framebuffer completo (115 KB) também caberia.
+- **The encoder is not an `lv_indev`.** The app reads it directly, because LVGL's encoder mode forces groups and edit state, which on a round UI adds more friction than value. Each screen decides what the knob does.
+- **Touch has a 70 ms hold window.** The CST816D reports by interrupt, not continuously; without it LVGL only sees instant taps and never a drag.
+- **Draw buffers are 1/6 of the screen, doubled, in internal RAM.** That's 2×19 KB, faster for SPI than PSRAM; a full framebuffer (115 KB) would also fit.
 
-## Diagnóstico (`env:diag`)
+## Diagnostics (`env:diag`)
 
-REPL pela porta série, uma linha por comando:
+REPL over the serial port, one command per line:
 
 ```
-h/l/z <pin>   pino a HIGH / LOW / libertado
-H | L | Z     todos os candidatos a HIGH / LOW / libertados
-m <a> <b>     HIGH apenas no intervalo
-d <pin> | D   acciona e lê o pad de volta (distingue input-only)
-p             mapa passivo de pull-ups/pull-downs externos
-i | S         scan I²C (simples / robusto com retentativas)
-I             força bruta I²C sobre pares de pinos
-E             caça ao pino de enable do painel
-t             probe repetido do CST816
-r             acende o anel WS2812
-g             inicializa o GC9A01 e pinta ciclo de cores
-?             estado actual
+h/l/z <pin>   pin HIGH / LOW / released
+H | L | Z     all candidates HIGH / LOW / released
+m <a> <b>     HIGH only within the range
+d <pin> | D   drive and read the pad back (detects input-only)
+p             passive map of external pull-ups/pull-downs
+i | S         I²C scan (simple / robust with retries)
+I             brute-force I²C over pin pairs
+E             hunt for the panel enable pin
+t             repeated CST816 probe
+r             light the WS2812 ring
+g             init the GC9A01 and paint a colour cycle
+?             current state
 ```
 
-Conduz-se de fora com `C:\tmp\poke.py`:
+Driven from outside with a small serial helper script:
 
 ```powershell
-python C:\tmp\poke.py COM11 --wait 20 "h 1" "S"
+python poke.py COM11 --wait 20 "h 1" "S"
 ```
 
-O probe I²C é bit-bang e não `Wire`: o driver do core 2.0.17 reinicia o chip
-quando reinicializado em pinos sem dispositivo. Mesmo em bit-bang, um probe
-isolado dá falsos positivos em linhas a flutuar — por isso o `S` e o `E` usam
-retentativas e só uma resposta consistente (5/5, 4/4) conta.
+The I²C probe is bit-banged rather than `Wire`: the 2.0.17 core driver resets the chip when re-initialised on pins with no device. Even bit-banged, a single probe gives false positives on floating lines — so `S` and `E` use retries and only a consistent answer (5/5, 4/4) counts.
 
-## Backup de fábrica
+## Factory backup
 
-`factory_backup.bin` (16 MB) é a imagem original da Elecrow, lida antes de
-gravar. Restaurar:
+Before flashing, the original Elecrow image was read out as `factory_backup.bin` (16 MB, not included in the repo). To restore:
 
 ```powershell
 python -m esptool --port COM11 write-flash 0 factory_backup.bin
 ```
 
-Ocupa 16 MB na pasta — se isto for para git, põe-no no `.gitignore`.
+## License
+
+[MIT](LICENSE)
